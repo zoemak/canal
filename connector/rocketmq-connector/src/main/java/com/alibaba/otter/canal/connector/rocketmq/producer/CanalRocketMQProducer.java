@@ -1,11 +1,19 @@
 package com.alibaba.otter.canal.connector.rocketmq.producer;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.stream.Collectors;
-
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.serializer.SerializerFeature;
+import com.alibaba.otter.canal.common.CanalException;
+import com.alibaba.otter.canal.common.utils.ExecutorTemplate;
+import com.alibaba.otter.canal.connector.core.producer.AbstractMQProducer;
+import com.alibaba.otter.canal.connector.core.producer.MQDestination;
+import com.alibaba.otter.canal.connector.core.producer.MQMessageUtils;
+import com.alibaba.otter.canal.connector.core.spi.CanalMQProducer;
+import com.alibaba.otter.canal.connector.core.spi.SPI;
+import com.alibaba.otter.canal.connector.core.util.Callback;
+import com.alibaba.otter.canal.connector.core.util.CanalMessageSerializerUtil;
+import com.alibaba.otter.canal.connector.rocketmq.config.RocketMQConstants;
+import com.alibaba.otter.canal.connector.rocketmq.config.RocketMQProducerConfig;
+import com.alibaba.otter.canal.protocol.FlatMessage;
 import org.apache.commons.lang.StringUtils;
 import org.apache.rocketmq.acl.common.AclClientRPCHook;
 import org.apache.rocketmq.acl.common.SessionCredentials;
@@ -21,20 +29,11 @@ import org.apache.rocketmq.remoting.RPCHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.serializer.SerializerFeature;
-import com.alibaba.otter.canal.common.CanalException;
-import com.alibaba.otter.canal.common.utils.ExecutorTemplate;
-import com.alibaba.otter.canal.connector.core.producer.AbstractMQProducer;
-import com.alibaba.otter.canal.connector.core.producer.MQDestination;
-import com.alibaba.otter.canal.connector.core.producer.MQMessageUtils;
-import com.alibaba.otter.canal.connector.core.spi.CanalMQProducer;
-import com.alibaba.otter.canal.connector.core.spi.SPI;
-import com.alibaba.otter.canal.connector.core.util.Callback;
-import com.alibaba.otter.canal.connector.core.util.CanalMessageSerializerUtil;
-import com.alibaba.otter.canal.connector.rocketmq.config.RocketMQConstants;
-import com.alibaba.otter.canal.connector.rocketmq.config.RocketMQProducerConfig;
-import com.alibaba.otter.canal.protocol.FlatMessage;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.stream.Collectors;
 
 /**
  * RocketMQ Producer SPI 实现
@@ -66,9 +65,9 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
         }
 
         defaultMQProducer = new DefaultMQProducer(rocketMQProperties.getProducerGroup(),
-            rpcHook,
-            rocketMQProperties.isEnableMessageTrace(),
-            rocketMQProperties.getCustomizedTraceTopic());
+                rpcHook,
+                rocketMQProperties.isEnableMessageTrace(),
+                rocketMQProperties.getCustomizedTraceTopic());
         if (CLOUD_ACCESS_CHANNEL.equals(rocketMQProperties.getAccessChannel())) {
             defaultMQProducer.setAccessChannel(AccessChannel.CLOUD);
         }
@@ -94,31 +93,31 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
         doMoreCompatibleConvert("canal.mq.namespace", "rocketmq.namespace", properties);
         doMoreCompatibleConvert("canal.mq.retries", "rocketmq.retry.times.when.send.failed", properties);
 
-        String producerGroup = properties.getProperty(RocketMQConstants.ROCKETMQ_PRODUCER_GROUP);
+        String producerGroup = getProperty(properties, RocketMQConstants.ROCKETMQ_PRODUCER_GROUP);
         if (!StringUtils.isEmpty(producerGroup)) {
             rocketMQProperties.setProducerGroup(producerGroup);
         }
-        String enableMessageTrace = properties.getProperty(RocketMQConstants.ROCKETMQ_ENABLE_MESSAGE_TRACE);
+        String enableMessageTrace = getProperty(properties, RocketMQConstants.ROCKETMQ_ENABLE_MESSAGE_TRACE);
         if (!StringUtils.isEmpty(enableMessageTrace)) {
             rocketMQProperties.setEnableMessageTrace(Boolean.parseBoolean(enableMessageTrace));
         }
-        String customizedTraceTopic = properties.getProperty(RocketMQConstants.ROCKETMQ_CUSTOMIZED_TRACE_TOPIC);
+        String customizedTraceTopic = getProperty(properties, RocketMQConstants.ROCKETMQ_CUSTOMIZED_TRACE_TOPIC);
         if (!StringUtils.isEmpty(customizedTraceTopic)) {
             rocketMQProperties.setCustomizedTraceTopic(customizedTraceTopic);
         }
-        String namespace = properties.getProperty(RocketMQConstants.ROCKETMQ_NAMESPACE);
+        String namespace = getProperty(properties, RocketMQConstants.ROCKETMQ_NAMESPACE);
         if (!StringUtils.isEmpty(namespace)) {
             rocketMQProperties.setNamespace(namespace);
         }
-        String namesrvAddr = properties.getProperty(RocketMQConstants.ROCKETMQ_NAMESRV_ADDR);
+        String namesrvAddr = getProperty(properties, RocketMQConstants.ROCKETMQ_NAMESRV_ADDR);
         if (!StringUtils.isEmpty(namesrvAddr)) {
             rocketMQProperties.setNamesrvAddr(namesrvAddr);
         }
-        String retry = properties.getProperty(RocketMQConstants.ROCKETMQ_RETRY_TIMES_WHEN_SEND_FAILED);
+        String retry = getProperty(properties, RocketMQConstants.ROCKETMQ_RETRY_TIMES_WHEN_SEND_FAILED);
         if (!StringUtils.isEmpty(retry)) {
             rocketMQProperties.setRetryTimesWhenSendFailed(Integer.parseInt(retry));
         }
-        String vipChannelEnabled = properties.getProperty(RocketMQConstants.ROCKETMQ_VIP_CHANNEL_ENABLED);
+        String vipChannelEnabled = getProperty(properties, RocketMQConstants.ROCKETMQ_VIP_CHANNEL_ENABLED);
         if (!StringUtils.isEmpty(vipChannelEnabled)) {
             rocketMQProperties.setVipChannelEnabled(Boolean.parseBoolean(vipChannelEnabled));
         }
@@ -131,8 +130,8 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
             if (!StringUtils.isEmpty(destination.getDynamicTopic())) {
                 // 动态topic
                 Map<String, com.alibaba.otter.canal.protocol.Message> messageMap = MQMessageUtils.messageTopics(message,
-                    destination.getTopic(),
-                    destination.getDynamicTopic());
+                        destination.getTopic(),
+                        destination.getDynamicTopic());
 
                 for (Map.Entry<String, com.alibaba.otter.canal.protocol.Message> entry : messageMap.entrySet()) {
                     String topicName = entry.getKey().replace('.', '_');
@@ -172,10 +171,10 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
                 MQMessageUtils.EntryRowData[] datas = MQMessageUtils.buildMessageData(message, buildExecutor);
                 // 串行分区
                 com.alibaba.otter.canal.protocol.Message[] messages = MQMessageUtils.messagePartition(datas,
-                    message.getId(),
-                    partitionNum,
-                    destination.getPartitionHash(),
-                    mqProperties.isDatabaseHash());
+                        message.getId(),
+                        partitionNum,
+                        destination.getPartitionHash(),
+                        mqProperties.isDatabaseHash());
                 int length = messages.length;
 
                 ExecutorTemplate template = new ExecutorTemplate(sendExecutor);
@@ -185,7 +184,7 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
                         final int index = i;
                         template.submit(() -> {
                             Message data = new Message(topicName, CanalMessageSerializerUtil.serializer(dataPartition,
-                                mqProperties.isFilterTransactionEntry()));
+                                    mqProperties.isFilterTransactionEntry()));
                             sendMessage(data, index);
                         });
                     }
@@ -195,7 +194,7 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
             } else {
                 final int partition = destination.getPartition() != null ? destination.getPartition() : 0;
                 Message data = new Message(topicName, CanalMessageSerializerUtil.serializer(message,
-                    mqProperties.isFilterTransactionEntry()));
+                        mqProperties.isFilterTransactionEntry()));
                 sendMessage(data, partition);
             }
         } else {
@@ -212,9 +211,9 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
 
                 for (FlatMessage flatMessage : flatMessages) {
                     FlatMessage[] partitionFlatMessage = MQMessageUtils.messagePartition(flatMessage,
-                        partitionNum,
-                        destination.getPartitionHash(),
-                        mqProperties.isDatabaseHash());
+                            partitionNum,
+                            destination.getPartitionHash(),
+                            mqProperties.isDatabaseHash());
                     int length = partitionFlatMessage.length;
                     for (int i = 0; i < length; i++) {
                         partitionFlatMessages.get(i).add(partitionFlatMessage[i]);
@@ -228,9 +227,9 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
                         final int index = i;
                         template.submit(() -> {
                             List<Message> messages = flatMessagePart.stream()
-                                .map(flatMessage -> new Message(topicName, JSON.toJSONBytes(flatMessage,
-                                    SerializerFeature.WriteMapNullValue)))
-                                .collect(Collectors.toList());
+                                    .map(flatMessage -> new Message(topicName, JSON.toJSONBytes(flatMessage,
+                                            SerializerFeature.WriteMapNullValue)))
+                                    .collect(Collectors.toList());
                             // 批量发送
                             sendMessage(messages, index);
                         });
@@ -242,9 +241,9 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
             } else {
                 final int partition = destination.getPartition() != null ? destination.getPartition() : 0;
                 List<Message> messages = flatMessages.stream()
-                    .map(flatMessage -> new Message(topicName, JSON.toJSONBytes(flatMessage,
-                        SerializerFeature.WriteMapNullValue)))
-                    .collect(Collectors.toList());
+                        .map(flatMessage -> new Message(topicName, JSON.toJSONBytes(flatMessage,
+                                SerializerFeature.WriteMapNullValue)))
+                        .collect(Collectors.toList());
                 // 批量发送
                 sendMessage(messages, partition);
             }
@@ -317,4 +316,10 @@ public class CanalRocketMQProducer extends AbstractMQProducer implements CanalMQ
         this.defaultMQProducer.shutdown();
         super.stop();
     }
+
+    @Override
+    public void log(String key, String value) {
+        logger.info("=========={}【{}】", key, value);
+    }
+
 }
